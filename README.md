@@ -56,6 +56,25 @@ ION_COOKIE_HTTP_ONLY=true
 ION_COOKIE_SAMESITE=Lax
 ```
 
+## Alur Autentikasi SSO
+
+Package ini mengikuti alur redirect-based SSO dengan **tiga step** utama. Perhatikan bahwa `client_identifier` (secret) **tidak lagi dikirim di Step 1** — secret hanya dikirim di Step 3 melalui back-channel.
+
+```
+Step 1 (browser)        Step 2 (browser)                Step 3 (server-to-server)
+   │                          │                                   │
+   ▼                          ▼                                   ▼
+Redirect ke SSO      SSO redirect kembali           Backend kirim POST /auth/verify
+/auth/login          ke /auth/callback?code=xxx       dengan JSON body:
+?client_key=xxx      │                                {
+&redirect_uri=yyy    │                                  "code": "xxx",
+                     │                                  "client_key": "xxx",
+                     │                                  "client_identifier": "yyy"
+                     │                                }
+```
+
+**Penting:** `client_identifier` hanya muncul di Step 3 (JSON body). Ia **tidak pernah** muncul di URL, browser history, access log, atau header `X-Client-Secret` saat `verify()`.
+
 ## Penggunaan
 
 ### Step 1 — Redirect User ke SSO Login
@@ -80,7 +99,16 @@ Setelah user berhasil login di ION SSO, SSO server akan redirect ke callback URL
 
 > **ION_ENABLED**: Jika `ION_ENABLED=false`, method `callback()` akan melewati seluruh proses SSO dan langsung redirect ke frontend. Ini memungkinkan aplikasi consumer untuk menggunakan auth Laravel/default atau provider autentikasi lainnya. Gunakan `IonClient::isEnabled()` untuk mengecek status integrasi SSO di kode aplikasi.
 
-1. Menukar `code` dengan `session_id` dari SSO.
+1. Menukar `code` dengan `session_id` dari SSO melalui `verify()`.
+   - Request ke `POST /auth/verify` dengan body JSON:
+     ```json
+     {
+         "code": "AUTH_CODE_DARI_CALLBACK",
+         "client_key": "your-client-key",
+         "client_identifier": "your-client-identifier"
+     }
+     ```
+   - `client_identifier` dikirim di body, **bukan** di URL atau header `X-Client-Secret`.
 2. Membuat session lokal Laravel dengan **ID yang sama persis dengan SSO session ID**.
 3. Mengambil data lengkap user dari SSO.
 4. Menyimpan data user ke session.
@@ -176,19 +204,33 @@ class AuthController extends Controller
 | `logout($sessionId)` | `POST /client/logout` | Logout user session (trigger putus ke SSO). |
 | `callback($request)` | `POST /auth/verify` + `POST /client/session/full-info` | Handle SSO callback, buat session lokal, set cookie, redirect ke frontend. |
 
-Setiap request akan otomatis menyertakan header wajib:
+### Header Wajib
+
+Hampir semua request ke ION otomatis menyertakan header wajib:
 
 - `X-Client-ID`
 - `X-Client-Secret`
 - `X-Timestamp`
 
+**Pengecualian:** `verify()` (Step 3, back-channel token exchange) tidak mengirim header `X-Client-Secret`. Credential (`client_key` dan `client_identifier`) dikirim dalam JSON body sesuai flow SSO terbaru.
+
 ## Struktur Data SSO
 
 Berikut adalah struktur data yang dikembalikan oleh ION SSO dan cara menggunakannya di aplikasi client.
 
-### 1. Response Verifikasi (`POST /auth/verify`)
+### 1. Request & Response Verifikasi (`POST /auth/verify`)
 
-Method `verify($code)` mengembalikan response dengan struktur:
+Method `verify($code)` mengirim request ke `POST /auth/verify` dengan body:
+
+```json
+{
+    "code": "AUTH_CODE_DARI_CALLBACK",
+    "client_key": "your-client-key",
+    "client_identifier": "your-client-identifier"
+}
+```
+
+Response yang dikembalikan:
 
 | Field | JSON Key | Keterangan |
 |---|---|---|
@@ -333,8 +375,10 @@ $roles = explode(';', $response['data']['user_roles']);
 
 ## Catatan Tentang Login
 
-Package client ini **tidak menyediakan fitur login**. Proses autentikasi pengguna (memasukkan kredensial) berjalan di sisi ION SSO melalui redirect/resmi SSO. Client hanya menerima session melalui:
+Package client ini **tidak menyediakan fitur login dengan username/password**. Proses autentikasi pengguna (memasukkan kredensial) berjalan di sisi ION SSO melalui redirect/resmi SSO. Client hanya menyediakan:
 
+- `getLoginUrl()` — membangun URL redirect ke halaman login SSO (Step 1).
+- `callback($request)` — menangani redirect balik dari SSO dan menukar `code` menjadi session (Step 2 & 3).
 - `verify($code)` — menukar authorization code hasil redirect SSO menjadi session ID dan data user.
 - `checkSession($sessionId)` — memvalidasi session yang sudah ada.
 
