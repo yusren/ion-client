@@ -41,11 +41,20 @@ class IonClient
         $this->config = array_merge([
             'enabled'       => true,
             'base_url'      => 'https://ion.palmco.id/api/v2',
-            'client_id'     => '',
-            'client_secret' => '',
+            'client_key'    => '',
+            'client_identifier' => '',
             'timeout'       => 30,
             'verify_ssl'    => true,
         ], $config);
+
+        // Backward compatibility: map legacy client_id/client_secret to the
+        // new client_key/client_identifier names if the new keys are empty.
+        if (empty($this->config['client_key']) && !empty($config['client_id'])) {
+            $this->config['client_key'] = $config['client_id'];
+        }
+        if (empty($this->config['client_identifier']) && !empty($config['client_secret'])) {
+            $this->config['client_identifier'] = $config['client_secret'];
+        }
 
         $this->http = $http ?? $this->buildHttpClient();
     }
@@ -97,6 +106,27 @@ class IonClient
     }
 
     /**
+     * Get the configured client key.
+     *
+     * @return string
+     */
+    public function getClientKey(): string
+    {
+        return (string) ($this->config['client_key'] ?? '');
+    }
+
+    /**
+     * Get the configured client identifier (secret).
+     * This value must never be exposed in URLs, HTML, rendered pages, or logs.
+     *
+     * @return string
+     */
+    public function getClientIdentifier(): string
+    {
+        return (string) ($this->config['client_identifier'] ?? '');
+    }
+
+    /**
      * Get the default request headers required by ION v2.
      *
      * @return array
@@ -104,8 +134,8 @@ class IonClient
     protected function headers(): array
     {
         return [
-            'X-Client-ID'     => (string) $this->config['client_id'],
-            'X-Client-Secret' => (string) $this->config['client_secret'],
+            'X-Client-ID'     => $this->getClientKey(),
+            'X-Client-Secret' => $this->getClientIdentifier(),
             'X-Timestamp'     => (string) time(),
         ];
     }
@@ -121,10 +151,22 @@ class IonClient
      */
     protected function request(string $method, string $uri, array $options = []): array
     {
-        $options['headers'] = array_merge(
-            $this->headers(),
-            $options['headers'] ?? []
-        );
+        $withAuthHeaders = $options['with_auth_headers'] ?? true;
+        unset($options['with_auth_headers']);
+
+        if ($withAuthHeaders) {
+            $options['headers'] = array_merge(
+                $this->headers(),
+                $options['headers'] ?? []
+            );
+        } else {
+            $options['headers'] = array_merge(
+                [
+                    'Accept' => 'application/json',
+                ],
+                $options['headers'] ?? []
+            );
+        }
 
         try {
             $response = $this->http->request($method, ltrim($uri, '/'), $options);
@@ -150,7 +192,17 @@ class IonClient
         } catch (RequestException $e) {
             // C2: Use our safe extractor; do NOT pass $e as previous to avoid
             // leaking request headers (including X-Client-Secret) in logs.
-            throw IonClientException::networkError($this->extractErrorMessage($e));
+            $message = $this->extractErrorMessage($e);
+
+            // Treat 4xx responses as authentication failures — these are not
+            // transient network errors but indicate invalid credentials, expired
+            // codes, or other client-side authentication issues.
+            if ($e->hasResponse() && $e->getResponse()->getStatusCode() >= 400
+                && $e->getResponse()->getStatusCode() < 500) {
+                throw IonClientException::authFailed($message);
+            }
+
+            throw IonClientException::networkError($message);
         } catch (\Throwable $e) {
             throw IonClientException::networkError($e->getMessage());
         }
@@ -200,6 +252,47 @@ class IonClient
     }
 
     /**
+     * Build the SSO login redirect URL (Step 1).
+     *
+     * This URL is sent to the user's browser. For security, it includes ONLY
+     * client_key and redirect_uri. client_identifier must NEVER appear here.
+     *
+     * @param string|null $redirectUri
+     * @param array       $extra
+     * @return string
+     * @throws \Ptpn\IonClient\Exceptions\IonClientException
+     */
+    public function getLoginUrl(?string $redirectUri = null, array $extra = []): string
+    {
+        $clientKey = $this->getClientKey();
+
+        if (empty($clientKey)) {
+            throw IonClientException::configError(
+                'ION Client: "client_key" is not configured. '
+                . 'Set ION_CLIENT_KEY in your .env file.'
+            );
+        }
+
+        $baseUrl = rtrim($this->config['base_url'], '/');
+
+        // Enforce HTTPS for security: never build a login URL over plain HTTP.
+        if (strpos(strtolower($baseUrl), 'https://') !== 0) {
+            throw IonClientException::configError(
+                'ION Client: SSO base_url must use HTTPS. Current: ' . $baseUrl
+            );
+        }
+
+        $redirectUri ??= $this->getFrontendUrl() . '/auth/callback';
+
+        $query = array_merge([
+            'client_key'    => $clientKey,
+            'redirect_uri'  => $redirectUri,
+        ], $extra);
+
+        return $baseUrl . '/auth/login?' . http_build_query($query);
+    }
+
+    /**
      * Check whether an SSO session is still active.
      *
      * @param string $sessionId
@@ -216,6 +309,9 @@ class IonClient
     /**
      * Exchange an authorization code for session ID and user data.
      *
+     * Step 3 back-channel handshake. The client_identifier is sent in the JSON
+     * body, never in the URL or headers exposed to the browser.
+     *
      * @param string $code
      * @return array
      * @throws \Ptpn\IonClient\Exceptions\IonClientException
@@ -223,7 +319,13 @@ class IonClient
     public function verify(string $code): array
     {
         return $this->request('POST', 'auth/verify', [
-            'json' => ['code' => $code],
+            // Step 3 sends credentials in the JSON body, not in headers.
+            'with_auth_headers' => false,
+            'json' => [
+                'code'              => $code,
+                'client_key'        => $this->getClientKey(),
+                'client_identifier' => $this->getClientIdentifier(),
+            ],
         ]);
     }
 

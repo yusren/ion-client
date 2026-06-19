@@ -6,7 +6,7 @@
 
 ```
 src/
-  Config/ion-client.php      # base_url, client_id, client_secret, timeout, verify_ssl, frontend_url, cookie
+  Config/ion-client.php      # base_url, client_key, client_identifier, timeout, verify_ssl, frontend_url, cookie, enabled
   Exceptions/IonClientException.php  # extend RuntimeException, ada factory methods & getType()
   Facades/IonClient.php      # Laravel Facade
   IonClient.php              # class utama
@@ -25,22 +25,57 @@ tests/IonClientTest.php
 | `heartbeat($id)` | `POST /client/heartbeat` | Perpanjang session |
 | `logout($id)` | `POST /client/logout` | Putus session di SSO |
 | `isEnabled()` | — | Cek apakah ION SSO aktif (config `enabled`) |
+| `getLoginUrl($redirectUri?, $extra)` | — | Step 1: URL redirect login SSO |
 | `callback($request)` | verify + full-info | Handle redirect SSO, buat session lokal, set cookie |
 
 Headers otomatis tiap request: `X-Client-ID`, `X-Client-Secret`, `X-Timestamp`.
 
-## Callback Flow (URUTAN PENTING — jangan diubah)
+## Login Flow (jangan diubah urutannya)
+
+### Step 1 — Redirect Login (browser)
+
+Bangun URL dengan `getLoginUrl($redirectUri?)`:
+
+```
+https://<sso-host>/api/v2/auth/login?client_key=XXX&redirect_uri=YYY
+```
+
+- Hanya `client_key` dan `redirect_uri` yang boleh ada.
+- `client_identifier` TIDAK BOLEH muncul di URL.
+- `base_url` harus HTTPS.
+
+### Step 2 — SSO redirect ke callback
+
+```
+GET /auth/callback?code=AUTH_CODE
+```
+
+### Step 3 — Back-channel verify
+
+`verify($code)` kirim POST ke `/api/v2/auth/verify` dengan JSON body:
+
+```json
+{
+  "code": "AUTH_CODE",
+  "client_key": "XXX",
+  "client_identifier": "YYY"
+}
+```
+
+Tidak pakai header `X-Client-Secret` di sini — secret hanya di body.
+
+### Callback Flow
 
 `IonClient::isEnabled()` membaca config `enabled` (env `ION_ENABLED`). Jika `false`, `callback()` langsung redirect ke frontend tanpa proses SSO — consumer bisa pakai auth Laravel/default.
 
 ```
 1. (skip jika enabled=false)
 2. verify($code)            → ssoSessionId
-2. Validasi format ID       regex /^[a-zA-Z0-9\-_]{20,256}$/
-3. getSessionFullInfo()     → userData  (gagal → redirect, TIDAK buat session)
-4. session()->invalidate() + setId($ssoSessionId) + start()
-5. session()->put(status, sso_session_id, user_data) + save()
-6. isSafeRedirectUrl(return_url cookie) → redirect ke frontend
+3. Validasi format ID       regex /^[a-zA-Z0-9\-_]{20,256}$/
+4. getSessionFullInfo()     → userData  (gagal → redirect, TIDAK buat session)
+5. session()->invalidate() + setId($ssoSessionId) + start()
+6. session()->put(status, sso_session_id, user_data) + save()
+7. isSafeRedirectUrl(return_url cookie) → redirect ke frontend
 ```
 
 Session ID lokal **harus sama** dengan SSO session ID agar logout webhook bisa hapus session lokal.
@@ -55,8 +90,8 @@ Route::get('/auth/callback', fn(Request $r) => app(IonClient::class)->callback($
 ```env
 ION_ENABLED=true
 ION_BASE_URL=https://ion.palmco.id/api/v2
-ION_CLIENT_ID=your-client-id
-ION_CLIENT_SECRET=your-client-secret
+ION_CLIENT_KEY=your-client-key
+ION_CLIENT_IDENTIFIER=your-client-identifier
 ION_TIMEOUT=30
 ION_VERIFY_SSL=true
 ION_FRONTEND_URL=http://localhost:9000
@@ -82,7 +117,7 @@ Publish config: `php artisan vendor:publish --tag=ion-client-config`
 
 - ❌ Jangan tambah `login()` — auth user bukan tanggung jawab client ini.
 - ✏️ Jika ubah method: update `IonClient.php` + `Facades/IonClient.php` (PHPDoc) + `README.md` + `agent.md`.
-- ✅ Selalu jalankan `vendor/bin/phpunit` setelah perubahan. (13 tests, 34 assertions)
+- ✅ Selalu jalankan `vendor/bin/phpunit` setelah perubahan. (18 tests, 49 assertions)
 - `IonClientException` punya factory methods: `networkError()`, `authFailed()`, `invalidResponse()`, `configError()` + `getType()`.
 - Constructor `IonClient(array $config, ?Client $http)` — inject mock HTTP client untuk testing, tanpa ReflectionClass.
 
@@ -102,3 +137,5 @@ Publish config: `php artisan vendor:publish --tag=ion-client-config`
 | M1+M4 | ReflectionClass di test (rapuh) | Injectable `?Client $http` di constructor |
 | M2 | `same_site` tidak divalidasi | Whitelist `['Strict','Lax','None']`, fallback ke `Lax` |
 | M3 | `timeout` tidak di-cast di config | `(int) env('ION_TIMEOUT', 30)` |
+| N1 | `client_identifier` muncul di URL Step 1 | `getLoginUrl()` hanya kirim `client_key` + `redirect_uri`; `verify()` kirim secret di JSON body |
+| N2 | `verify()` pakai header auth | `verify()` set `with_auth_headers=false`, credential hanya di JSON body |

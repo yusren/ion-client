@@ -30,12 +30,19 @@ return [
     |--------------------------------------------------------------------------
     |
     | Application key dan secret yang diberikan oleh administrator ION untuk
-    | setiap client app. Kedua nilai ini wajib ada agar request dapat diterima
-    | oleh middleware client ION.
+    | setiap client app.
+    |
+    | - client_key        : digunakan di URL redirect login (Step 1) dan di
+    |                       back-channel verify request (Step 3).
+    | - client_identifier : digunakan HANYA di back-channel verify request
+    |                       (Step 3). TIDAK BOLEH muncul di URL/browser.
+    |
+    | Fallback ke ION_CLIENT_ID / ION_CLIENT_SECRET disediakan untuk backward
+    | compatibility dengan konfigurasi lama.
     |
     */
-    'client_id' => env('ION_CLIENT_ID', ''),
-    'client_secret' => env('ION_CLIENT_SECRET', ''),
+    'client_key' => env('ION_CLIENT_KEY', env('ION_CLIENT_ID', '')),
+    'client_identifier' => env('ION_CLIENT_IDENTIFIER', env('ION_CLIENT_SECRET', '')),
 
     /*
     |--------------------------------------------------------------------------

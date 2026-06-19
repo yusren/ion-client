@@ -12,6 +12,9 @@ use Illuminate\Support\Facades\Facade;
  * @method static array heartbeat(string $sessionId)
  * @method static array logout(string $sessionId)
  * @method static bool isEnabled()
+ * @method static string getClientKey()
+ * @method static string getClientIdentifier()
+ * @method static string getLoginUrl(string|null $redirectUri = null, array $extra = [])
  * @method static \Illuminate\Http\RedirectResponse callback(\Illuminate\Http\Request $request)
  *
  * @see \Ptpn\IonClient\IonClient

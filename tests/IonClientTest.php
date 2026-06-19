@@ -61,6 +61,8 @@ class IonClientTest extends TestCase
 
         return new IonClient(array_merge([
             'frontend_url' => 'http://localhost',
+            'client_key' => 'test-client-key',
+            'client_identifier' => 'test-client-secret',
         ], $config), $http);
     }
 
@@ -74,8 +76,8 @@ class IonClientTest extends TestCase
 
         $this->assertIsArray($config);
         $this->assertArrayHasKey('base_url', $config);
-        $this->assertArrayHasKey('client_id', $config);
-        $this->assertArrayHasKey('client_secret', $config);
+        $this->assertArrayHasKey('client_key', $config);
+        $this->assertArrayHasKey('client_identifier', $config);
         $this->assertSame('https://ion.palmco.id/api/v2', $config['base_url']);
     }
 
@@ -292,6 +294,117 @@ class IonClientTest extends TestCase
         $this->assertEquals('http://localhost', $response->headers->get('Location'));
         // No SSO session should be created
         $this->assertNull($request->session()->get('status'));
+    }
+
+    /**
+     * Step 1 — Login URL must include client_key and redirect_uri only.
+     * client_identifier must NEVER appear in the URL.
+     */
+    public function test_login_url_contains_only_client_key_and_redirect_uri()
+    {
+        $client = new IonClient([
+            'base_url' => 'https://ion.example.com/api/v2',
+            'client_key' => 'my-client-key',
+            'client_identifier' => 'my-client-secret',
+            'frontend_url' => 'https://app.example.com',
+        ]);
+
+        $url = $client->getLoginUrl('https://app.example.com/auth/callback');
+
+        $this->assertStringStartsWith('https://ion.example.com/api/v2/auth/login?', $url);
+        $this->assertStringContainsString('client_key=my-client-key', $url);
+        $this->assertStringContainsString('redirect_uri=' . urlencode('https://app.example.com/auth/callback'), $url);
+        $this->assertStringNotContainsString('my-client-secret', $url);
+        $this->assertStringNotContainsString('client_identifier', $url);
+    }
+
+    /**
+     * Step 1 — Login URL rejects non-HTTPS base_url.
+     */
+    public function test_login_url_rejects_http_base_url()
+    {
+        $client = new IonClient([
+            'base_url' => 'http://ion.example.com/api/v2',
+            'client_key' => 'my-client-key',
+        ]);
+
+        $this->expectException(IonClientException::class);
+        $this->expectExceptionMessage('must use HTTPS');
+
+        $client->getLoginUrl();
+    }
+
+    /**
+     * Step 3 — verify() sends client_key and client_identifier in JSON body,
+     * not in auth headers.
+     */
+    public function test_verify_sends_credentials_in_json_body()
+    {
+        $captured = [];
+        $mock = new MockHandler([
+            new Response(200, [], json_encode([
+                'session_id' => 'sso-session-id-1234567890abc',
+            ])),
+        ]);
+
+        $stack = HandlerStack::create($mock);
+        $stack->push(function (callable $handler) use (&$captured) {
+            return function (GuzzleRequest $request, array $options) use ($handler, &$captured) {
+                $captured['body'] = (string) $request->getBody();
+                $captured['headers'] = $request->getHeaders();
+                return $handler($request, $options);
+            };
+        });
+
+        $client = new IonClient([
+            'client_key' => 'my-client-key',
+            'client_identifier' => 'my-client-secret',
+        ], new Client(['handler' => $stack]));
+
+        $client->verify('auth-code-123');
+
+        $body = json_decode($captured['body'], true);
+        $this->assertSame('auth-code-123', $body['code']);
+        $this->assertSame('my-client-key', $body['client_key']);
+        $this->assertSame('my-client-secret', $body['client_identifier']);
+
+        // X-Client-Secret must NOT be sent in verify() — secret stays in body.
+        $this->assertArrayNotHasKey('X-Client-Secret', $captured['headers']);
+    }
+
+    /**
+     * 4xx responses from verify() must be treated as authentication failures.
+     */
+    public function test_verify_treats_4xx_as_auth_failure()
+    {
+        $client = $this->makeClientWithMock([
+            new Response(401, [], json_encode([
+                'error' => 'invalid_client_identifier',
+            ])),
+        ]);
+
+        try {
+            $client->verify('bad-code');
+            $this->fail('Expected IonClientException was not thrown.');
+        } catch (IonClientException $e) {
+            $this->assertSame(IonClientException::TYPE_AUTH, $e->getType());
+            $this->assertStringContainsString('invalid_client_identifier', $e->getMessage());
+        }
+    }
+
+    /**
+     * Backward compatibility: legacy client_id/client_secret config is mapped
+     * to client_key/client_identifier.
+     */
+    public function test_legacy_client_id_and_secret_are_mapped()
+    {
+        $client = new IonClient([
+            'client_id' => 'legacy-id',
+            'client_secret' => 'legacy-secret',
+        ]);
+
+        $this->assertSame('legacy-id', $client->getClientKey());
+        $this->assertSame('legacy-secret', $client->getClientIdentifier());
     }
 
     /**

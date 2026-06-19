@@ -39,8 +39,8 @@ ION_ENABLED=true
 
 # Konfigurasi API ION
 ION_BASE_URL=https://ion.palmco.id/api/v2
-ION_CLIENT_ID=your-client-id
-ION_CLIENT_SECRET=your-client-secret
+ION_CLIENT_KEY=your-client-key
+ION_CLIENT_IDENTIFIER=your-client-identifier
 ION_TIMEOUT=30
 ION_VERIFY_SSL=true
 
@@ -57,6 +57,22 @@ ION_COOKIE_SAMESITE=Lax
 ```
 
 ## Penggunaan
+
+### Step 1 — Redirect User ke SSO Login
+
+Gunakan method `getLoginUrl()` untuk membangun URL login SSO. URL ini aman dibagikan ke browser karena hanya mengandung `client_key` dan `redirect_uri`. **Secret `client_identifier` tidak pernah muncul di URL.**
+
+```php
+use IonClient;
+
+$loginUrl = IonClient::getLoginUrl(
+    redirectUri: 'https://app.example.com/auth/callback',
+);
+
+return redirect($loginUrl);
+```
+
+Secara default, jika `redirectUri` tidak diberikan, akan digunakan `ION_FRONTEND_URL/auth/callback`.
 
 ### SSO Callback
 
@@ -155,6 +171,7 @@ class AuthController extends Controller
 | `verify($code)` | `POST /auth/verify` | Tukar auth code menjadi session ID + data user. |
 | `getSessionFullInfo($sessionId)` | `POST /client/session/full-info` | Ambil data session lengkap. |
 | `getUserRoles($sessionId, $application)` | `POST /client/user/roles` | Ambil daftar role user untuk app tertentu. |
+| `getLoginUrl($redirectUri, $extra)` | — | Bangun URL redirect SSO login (Step 1). Hanya mengandung `client_key` + `redirect_uri`. |
 | `heartbeat($sessionId)` | `POST /client/heartbeat` | Pertahankan session tetap aktif. |
 | `logout($sessionId)` | `POST /client/logout` | Logout user session (trigger putus ke SSO). |
 | `callback($request)` | `POST /auth/verify` + `POST /client/session/full-info` | Handle SSO callback, buat session lokal, set cookie, redirect ke frontend. |
