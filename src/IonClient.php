@@ -289,7 +289,17 @@ class IonClient
             'redirect_uri'  => $redirectUri,
         ], $extra);
 
-        return $baseUrl . '/auth/login?' . http_build_query($query);
+        $queryString = http_build_query($query);
+
+        // ION SSO cannot read percent-encoded slash/colon in redirect_uri;
+        // keep those characters literal so the server can parse the URL.
+        $queryString = str_replace(
+            ['%2F', '%3A'],
+            ['/', ':'],
+            $queryString
+        );
+
+        return $baseUrl . '/auth/login?' . $queryString;
     }
 
     /**

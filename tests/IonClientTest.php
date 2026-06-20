@@ -313,7 +313,7 @@ class IonClientTest extends TestCase
 
         $this->assertStringStartsWith('https://ion.example.com/api/v2/auth/login?', $url);
         $this->assertStringContainsString('client_key=my-client-key', $url);
-        $this->assertStringContainsString('redirect_uri=' . urlencode('https://app.example.com/auth/callback'), $url);
+        $this->assertStringContainsString('redirect_uri=https://app.example.com/auth/callback', $url);
         $this->assertStringNotContainsString('my-client-secret', $url);
         $this->assertStringNotContainsString('client_identifier', $url);
     }
