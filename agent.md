@@ -18,15 +18,15 @@ tests/IonClientTest.php
 
 | Method | Endpoint | Keterangan |
 |--------|----------|------------|
-| `checkSession($id)` | `GET /auth/check-session` | Validasi session aktif |
-| `verify($code)` | `POST /auth/verify` | Tukar auth code → session ID + user |
-| `getSessionFullInfo($id)` | `POST /client/session/full-info` | Data session lengkap |
-| `getUserRoles($id, $app?)` | `POST /client/user/roles` | Role user per aplikasi |
-| `heartbeat($id)` | `POST /client/heartbeat` | Perpanjang session |
-| `logout($id)` | `POST /client/logout` | Putus session di SSO |
+| `checkSession($id)` | `GET /api/v2/auth/check-session` | Validasi session aktif |
+| `verify($code)` | `POST /api/v2/auth/verify` | Tukar auth code → session ID + user |
+| `getSessionFullInfo($id)` | `POST /api/v2/client/session/full-info` | Data session lengkap |
+| `getUserRoles($id, $app?)` | `POST /api/v2/client/user/roles` | Role user per aplikasi |
+| `heartbeat($id)` | `POST /api/v2/client/heartbeat` | Perpanjang session |
+| `logout($id)` | `POST /api/v2/client/logout` | Putus session di SSO |
 | `isEnabled()` | — | Cek apakah ION SSO aktif (config `enabled`) |
 | `getLoginUrl($redirectUri?, $extra)` | — | Step 1: URL redirect login SSO |
-| `callback($request)` | verify + full-info | Handle redirect SSO, buat session lokal, set cookie |
+| `callback($request)` | `POST /api/v2/auth/verify` + `POST /api/v2/client/session/full-info` | Handle redirect SSO, buat session lokal, set cookie |
 
 Headers otomatis tiap request: `X-Client-ID`, `X-Client-Secret`, `X-Timestamp`.
 
@@ -37,7 +37,7 @@ Headers otomatis tiap request: `X-Client-ID`, `X-Client-Secret`, `X-Timestamp`.
 Bangun URL dengan `getLoginUrl($redirectUri?)`:
 
 ```
-https://<sso-host>/api/v2/auth/login?client_key=XXX&redirect_uri=YYY
+https://<sso-host>/auth/login?client_key=XXX&redirect_uri=YYY
 ```
 
 - Hanya `client_key` dan `redirect_uri` yang boleh ada.
@@ -79,6 +79,8 @@ Tidak pakai header `X-Client-Secret` di sini — secret hanya di body.
 ```
 
 Session ID lokal **harus sama** dengan SSO session ID agar logout webhook bisa hapus session lokal.
+
+`callback()` juga menulis log debug (Laravel `Log::debug`) untuk: keberadaan/kode masuk, hasil/gagal `verify()`, session ID yang diekstrak, kunci data session lokal, konfigurasi cookie, dan tujuan redirect. Gunakan saat troubleshooting SSO loop atau cookie/session.
 
 Route contoh:
 ```php

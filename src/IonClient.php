@@ -9,6 +9,7 @@ use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Ptpn\IonClient\Exceptions\IonClientException;
 
 class IonClient
@@ -95,7 +96,7 @@ class IonClient
 
         return new Client([
             'handler'     => $stack,
-            'base_uri'    => rtrim($this->config['base_url'], '/') . '/',
+            'base_uri'    => rtrim($this->config['base_url'], '/') . '/api/v2/',
             'timeout'     => (int) $this->config['timeout'],
             'verify'      => (bool) $this->config['verify_ssl'],
             'http_errors' => true,
@@ -422,23 +423,43 @@ class IonClient
         // If ION SSO is disabled, skip all SSO processing and let the host
         // application handle authentication via Laravel Auth or another provider.
         if (!$this->isEnabled()) {
+            Log::debug('ION SSO callback skipped: integration is disabled');
             return $this->redirectToFrontend($request);
         }
 
         $code = $request->query('code');
 
+        Log::debug('ION SSO callback received', [
+            'code_present' => !empty($code) && is_string($code),
+            'code_length'  => is_string($code) ? strlen($code) : 0,
+            'cookie_names' => $request->cookies->keys(),
+        ]);
+
         if (empty($code) || !is_string($code)) {
+            Log::debug('ION SSO callback aborted: missing or invalid authorization code');
             return $this->redirectToFrontend($request);
         }
 
         // Step 2: Exchange code → SSO session ID
         try {
             $verifyResponse = $this->verify($code);
+            Log::debug('ION SSO verify succeeded', [
+                'response_keys' => array_keys($verifyResponse),
+            ]);
         } catch (IonClientException $e) {
+            Log::debug('ION SSO verify failed', [
+                'error' => $e->getMessage(),
+                'error_type' => $e->getType(),
+            ]);
             return $this->redirectToFrontend($request);
         }
 
         $ssoSessionId = $this->extractSessionId($verifyResponse);
+
+        Log::debug('ION SSO session ID extracted', [
+            'session_id_present' => !empty($ssoSessionId),
+            'session_id_length'  => $ssoSessionId ? strlen($ssoSessionId) : 0,
+        ]);
 
         if (empty($ssoSessionId)) {
             return $this->redirectToFrontend($request);
@@ -447,6 +468,9 @@ class IonClient
         // C3: Validate session ID format before using it as a local session ID.
         // This prevents session fixation via a crafted/low-entropy session ID.
         if (!preg_match('/^[a-zA-Z0-9\-_]{20,256}$/', $ssoSessionId)) {
+            Log::debug('ION SSO callback aborted: invalid session ID format', [
+                'session_id_length' => strlen($ssoSessionId),
+            ]);
             return $this->redirectToFrontend($request);
         }
 
@@ -454,7 +478,14 @@ class IonClient
         // if this call fails we don't leave a half-baked session behind.
         try {
             $fullInfoResponse = $this->getSessionFullInfo($ssoSessionId);
+            Log::debug('ION SSO full-info succeeded', [
+                'response_keys' => array_keys($fullInfoResponse),
+            ]);
         } catch (IonClientException $e) {
+            Log::debug('ION SSO full-info failed', [
+                'error' => $e->getMessage(),
+                'error_type' => $e->getType(),
+            ]);
             return $this->redirectToFrontend($request);
         }
 
@@ -470,12 +501,27 @@ class IonClient
         $request->session()->put('user_data', json_encode($userData));
         $request->session()->save();
 
+        Log::debug('ION SSO local session saved', [
+            'session_keys' => array_keys($request->session()->all()),
+        ]);
+
         // C1: Validate return_url against the configured frontend host before redirect.
         $cookie      = $this->makeSessionCookie($ssoSessionId);
         $returnUrl   = $request->cookie('return_url');
         $destination = ($returnUrl && $this->isSafeRedirectUrl($returnUrl))
             ? $returnUrl
             : $this->getFrontendUrl();
+
+        Log::debug('ION SSO session cookie created', [
+            'cookie_name'      => $cookie->getName(),
+            'cookie_path'      => $cookie->getPath(),
+            'cookie_domain'    => $cookie->getDomain(),
+            'cookie_secure'    => $cookie->isSecure(),
+            'cookie_http_only' => $cookie->isHttpOnly(),
+            'cookie_same_site' => $cookie->getSameSite(),
+        ]);
+
+        Log::debug('ION SSO redirecting', ['destination' => $destination]);
 
         $clearReturnUrlCookie = cookie('return_url', '', -1);
 

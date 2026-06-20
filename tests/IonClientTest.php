@@ -303,7 +303,7 @@ class IonClientTest extends TestCase
     public function test_login_url_contains_only_client_key_and_redirect_uri()
     {
         $client = new IonClient([
-            'base_url' => 'https://ion.example.com/api/v2',
+            'base_url' => 'https://ion.example.com',
             'client_key' => 'my-client-key',
             'client_identifier' => 'my-client-secret',
             'frontend_url' => 'https://app.example.com',
@@ -311,7 +311,7 @@ class IonClientTest extends TestCase
 
         $url = $client->getLoginUrl('https://app.example.com/auth/callback');
 
-        $this->assertStringStartsWith('https://ion.example.com/api/v2/auth/login?', $url);
+        $this->assertStringStartsWith('https://ion.example.com/auth/login?', $url);
         $this->assertStringContainsString('client_key=my-client-key', $url);
         $this->assertStringContainsString('redirect_uri=https://app.example.com/auth/callback', $url);
         $this->assertStringNotContainsString('my-client-secret', $url);
@@ -324,7 +324,7 @@ class IonClientTest extends TestCase
     public function test_login_url_rejects_http_base_url()
     {
         $client = new IonClient([
-            'base_url' => 'http://ion.example.com/api/v2',
+            'base_url' => 'http://ion.example.com',
             'client_key' => 'my-client-key',
         ]);
 

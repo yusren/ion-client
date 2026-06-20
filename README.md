@@ -64,7 +64,7 @@ Package ini mengikuti alur redirect-based SSO dengan **tiga step** utama. Perhat
 Step 1 (browser)        Step 2 (browser)                Step 3 (server-to-server)
    │                          │                                   │
    ▼                          ▼                                   ▼
-Redirect ke SSO      SSO redirect kembali           Backend kirim POST /auth/verify
+Redirect ke SSO      SSO redirect kembali           Backend kirim POST /api/v2/auth/verify
 /auth/login          ke /auth/callback?code=xxx       dengan JSON body:
 ?client_key=xxx      │                                {
 &redirect_uri=yyy    │                                  "code": "xxx",
@@ -100,7 +100,7 @@ Setelah user berhasil login di ION SSO, SSO server akan redirect ke callback URL
 > **ION_ENABLED**: Jika `ION_ENABLED=false`, method `callback()` akan melewati seluruh proses SSO dan langsung redirect ke frontend. Ini memungkinkan aplikasi consumer untuk menggunakan auth Laravel/default atau provider autentikasi lainnya. Gunakan `IonClient::isEnabled()` untuk mengecek status integrasi SSO di kode aplikasi.
 
 1. Menukar `code` dengan `session_id` dari SSO melalui `verify()`.
-   - Request ke `POST /auth/verify` dengan body JSON:
+   - Request ke `POST /api/v2/auth/verify` dengan body JSON:
      ```json
      {
          "code": "AUTH_CODE_DARI_CALLBACK",
@@ -136,6 +136,8 @@ Route::get('/auth/callback', function (\Illuminate\Http\Request $request) {
     return IonClient::callback($request);
 });
 ```
+
+> **Debug:** `callback()` mencatat event penting ke Laravel log pada level `debug` (misalnya kode masuk, hasil `verify()`, session ID yang diekstrak, kunci data session yang disimpan, konfigurasi cookie, dan tujuan redirect). Aktifkan `APP_DEBUG=true` atau channel log `debug` saat menganalisis masalah SSO.
 
 > **Penting:** session lokal dibuat dengan ID yang sama dengan SSO session ID. Hal ini diperlukan agar webhook logout dari SSO dapat menghapus session lokal berdasarkan ID tersebut.
 
@@ -195,14 +197,14 @@ class AuthController extends Controller
 
 | Method | Endpoint | Deskripsi |
 |--------|----------|-----------|
-| `checkSession($sessionId)` | `GET /auth/check-session` | Cek apakah session SSO masih aktif. |
-| `verify($code)` | `POST /auth/verify` | Tukar auth code menjadi session ID + data user. |
-| `getSessionFullInfo($sessionId)` | `POST /client/session/full-info` | Ambil data session lengkap. |
-| `getUserRoles($sessionId, $application)` | `POST /client/user/roles` | Ambil daftar role user untuk app tertentu. |
+| `checkSession($sessionId)` | `GET /api/v2/auth/check-session` | Cek apakah session SSO masih aktif. |
+| `verify($code)` | `POST /api/v2/auth/verify` | Tukar auth code menjadi session ID + data user. |
+| `getSessionFullInfo($sessionId)` | `POST /api/v2/client/session/full-info` | Ambil data session lengkap. |
+| `getUserRoles($sessionId, $application)` | `POST /api/v2/client/user/roles` | Ambil daftar role user untuk app tertentu. |
 | `getLoginUrl($redirectUri, $extra)` | — | Bangun URL redirect SSO login (Step 1). Hanya mengandung `client_key` + `redirect_uri`. |
-| `heartbeat($sessionId)` | `POST /client/heartbeat` | Pertahankan session tetap aktif. |
-| `logout($sessionId)` | `POST /client/logout` | Logout user session (trigger putus ke SSO). |
-| `callback($request)` | `POST /auth/verify` + `POST /client/session/full-info` | Handle SSO callback, buat session lokal, set cookie, redirect ke frontend. |
+| `heartbeat($sessionId)` | `POST /api/v2/client/heartbeat` | Pertahankan session tetap aktif. |
+| `logout($sessionId)` | `POST /api/v2/client/logout` | Logout user session (trigger putus ke SSO). |
+| `callback($request)` | `POST /api/v2/auth/verify` + `POST /api/v2/client/session/full-info` | Handle SSO callback, buat session lokal, set cookie, redirect ke frontend. |
 
 ### Header Wajib
 
