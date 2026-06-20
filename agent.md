@@ -89,7 +89,7 @@ Route::get('/auth/callback', fn(Request $r) => app(IonClient::class)->callback($
 
 ```env
 ION_ENABLED=true
-ION_BASE_URL=https://ion.palmco.id/api/v2
+ION_BASE_URL=https://ion.palmco.id
 ION_CLIENT_KEY=your-client-key
 ION_CLIENT_IDENTIFIER=your-client-identifier
 ION_TIMEOUT=30

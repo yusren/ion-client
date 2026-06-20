@@ -38,7 +38,7 @@ Setelah dipublish, file `config/ion-client.php` akan tersedia. Tambahkan environ
 ION_ENABLED=true
 
 # Konfigurasi API ION
-ION_BASE_URL=https://ion.palmco.id/api/v2
+ION_BASE_URL=https://ion.palmco.id
 ION_CLIENT_KEY=your-client-key
 ION_CLIENT_IDENTIFIER=your-client-identifier
 ION_TIMEOUT=30

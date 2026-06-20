@@ -40,7 +40,7 @@ class IonClient
     {
         $this->config = array_merge([
             'enabled'       => true,
-            'base_url'      => 'https://ion.palmco.id/api/v2',
+            'base_url'      => 'https://ion.palmco.id',
             'client_key'    => '',
             'client_identifier' => '',
             'timeout'       => 30,

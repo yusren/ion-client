@@ -77,7 +77,7 @@ Tambahkan ke `.env` (dan `.env.example`):
 
 ```env
 # ION SSO API
-ION_BASE_URL=https://ion.palmco.id/api/v2
+ION_BASE_URL=https://ion.palmco.id
 ION_CLIENT_ID=your-client-id
 ION_CLIENT_SECRET=your-client-secret
 ION_TIMEOUT=30

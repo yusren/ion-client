@@ -78,7 +78,7 @@ class IonClientTest extends TestCase
         $this->assertArrayHasKey('base_url', $config);
         $this->assertArrayHasKey('client_key', $config);
         $this->assertArrayHasKey('client_identifier', $config);
-        $this->assertSame('https://ion.palmco.id/api/v2', $config['base_url']);
+        $this->assertSame('https://ion.palmco.id', $config['base_url']);
     }
 
     public function test_it_resolves_client_from_container()

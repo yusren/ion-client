@@ -22,7 +22,7 @@ return [
     | PTPN. Ubah sesuai environment (staging/production).
     |
     */
-    'base_url' => env('ION_BASE_URL', 'https://ion.palmco.id/api/v2'),
+    'base_url' => env('ION_BASE_URL', 'https://ion.palmco.id'),
 
     /*
     |--------------------------------------------------------------------------
